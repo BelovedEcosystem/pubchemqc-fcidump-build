@@ -22,7 +22,7 @@ def one(rec):
                 j=f'{out}/check_{f[:-3]}.json'
                 subprocess.run([PY,CHK,f'{out}/{f}','--json',j]+(['--no-mf'] if 'full' in f else []),capture_output=True,timeout=3600)
                 c=json.load(open(j)) if os.path.exists(j) else {}
-                checks[f]=dict(verdict=c.get('verdict') or c.get('status'),sha256=sha(f'{out}/{f}'),bytes=os.path.getsize(f'{out}/{f}'))
+                checks[f]=dict(verdict=c.get('verdict') or c.get('status'),sha256=c.get('info',{}).get('sha256'),sha256_gz=sha(f'{out}/{f}'),bytes=os.path.getsize(f'{out}/{f}'))  # sha256 = uncompressed text
         bad=[f for f,c in checks.items() if c['verdict']!='ACCEPTED']
         if bad: row.update(status='rejected',reason=f'checker did not accept {bad}',checks=checks); raise StopIteration
         row.update(checks=checks,status='ok')

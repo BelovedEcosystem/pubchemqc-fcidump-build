@@ -10,3 +10,10 @@ BECOME energy catalog at https://become.belovedecosystem.com/energy/.
 - `scripts/pcq_run.py` runs a batch in parallel and writes `catalog.jsonl`.
 
 The `Build PubChemQC FCIDUMPs` workflow runs this across many GitHub runners at once.
+- `scripts/pcq_finalize.py` re-checks every file and writes the published library (`SHA256SUMS` for the
+  uncompressed text, `SHA256SUMS-gz` for the `.gz` archives).
+
+Recipe version 2 adds: the functional named explicitly (`b3lypg`), degenerate orbitals fixed by a fixed
+generic operator, a phase rule on every orbital, gzip written with mtime 0, integral re-read checks, a direct
+CASCI cross-check, and a gate rejecting molecules too small for an 8e8o active space. Repeat runs agree within
+about 1e-9 in every integral but are not byte-identical, so compare files by tolerance, not by hash.
