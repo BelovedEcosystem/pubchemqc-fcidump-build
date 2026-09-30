@@ -15,6 +15,7 @@ def lines(url):
         try:
             req=urllib.request.Request(url,headers={'Range':f'bytes={off}-'} if off else {})
             resp=urllib.request.urlopen(req,timeout=600)
+            if off and resp.status!=206: raise IOError(f'server ignored the Range request (status {resp.status})')
             cr=resp.headers.get('Content-Range'); cl=resp.headers.get('Content-Length')
             total=int(cr.rsplit('/',1)[1]) if cr else (off+int(cl) if cl else None)
             pend=None
@@ -22,8 +23,9 @@ def lines(url):
                 if pend is not None: off+=len(pend); tries=0; yield pend; pend=None
                 if not raw.endswith(b'\n'): pend=raw; continue
                 off+=len(raw); tries=0; yield raw
-            if pend is None: return
-            if total is not None and off+len(pend)==total: yield pend+b'\n'; return
+            if pend is not None and total is not None and off+len(pend)==total: yield pend+b'\n'; return   # file's last line has no newline
+            if pend is None and (total is None or off==total): return
+            raise IOError(f'short read: {off} of {total} bytes')   # connection closed early; reconnect from off
         except Exception as e:
             tries+=1; log('reconnect',off,repr(e)[:120])
             if tries>20: raise

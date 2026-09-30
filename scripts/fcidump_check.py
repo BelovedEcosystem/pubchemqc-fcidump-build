@@ -46,7 +46,10 @@ def parse_header(text):
     hdr = {}
     for mm in re.finditer(r"([A-Za-z_][A-Za-z_0-9]*)\s*=\s*([-+0-9.,\sEeDd]*?)(?=[A-Za-z_][A-Za-z_0-9]*\s*=|$)", body, re.S):
         hdr[mm.group(1).upper()] = [v for v in re.split(r"[,\s]+", mm.group(2).strip()) if v]
+    # UHF flags: bare (`UHF`), numeric (`UHF=1`, caught above) or Fortran logical (`UHF=.TRUE.`, `UHF=T`)
     for mm in re.finditer(r"\b(UHF|IUHF|TUHF)\b(?!\s*=)", body, re.I):
+        hdr[mm.group(1).upper()] = ["1"]
+    for mm in re.finditer(r"\b(UHF|IUHF|TUHF)\s*=\s*\.?(T|TRUE)\b", body, re.I):
         hdr[mm.group(1).upper()] = ["1"]
     return hdr, m.end()
 
@@ -79,7 +82,7 @@ def check(path, run_mf=True):
     if hdr is None:
         R.add("header", "FAIL", "No &FCI ... &END header found."); return R, None
     def geti(k, default=None):
-        if k not in hdr: return default
+        if k not in hdr or not hdr[k]: return default
         return int(hdr[k][0])
     try:
         norb, nelec, ms2 = geti("NORB"), geti("NELEC"), geti("MS2", None)

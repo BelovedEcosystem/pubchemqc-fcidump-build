@@ -11,7 +11,7 @@ on:
       shards:    { description: 'Runners per source file', required: true, default: '4' }
       maxorb:    { description: 'Max orbitals', required: true, default: '150' }
       limit:     { description: 'Molecules per shard (0 = all; for tests)', required: true, default: '0' }
-      budget_min: { description: 'Stop starting new molecules after this many minutes', required: true, default: '320' }
+      budget_min: { description: 'Stop starting new molecules after this many minutes (job limit 355 min; one molecule may take up to 120 min, so keep this <= 230)', required: true, default: '230' }
 
 permissions:
   contents: read
@@ -71,3 +71,26 @@ jobs:
       - uses: actions/upload-artifact@v4
         if: always()
         with: { name: 'out-${{ matrix.cell.file }}-${{ matrix.cell.shard }}', path: out, retention-days: 30 }
+
+  # Merge every shard's out/ into one tree and run the final re-check; the published library is uploaded
+  # as one artifact ('library'), so nothing has to be assembled by hand before the shard artifacts expire.
+  finalize:
+    needs: [plan, build]
+    if: ${{ !cancelled() }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: '3.13', cache: pip, cache-dependency-path: requirements.txt }
+      - run: pip install -r requirements.txt
+      - uses: actions/download-artifact@v4
+        with: { pattern: 'out-*', path: shards }
+      - name: Merge shards and finalize
+        run: |
+          python scripts/pcq_merge.py merged shards/out-*
+          PCQ_DIR=merged python scripts/pcq_finalize.py
+      - uses: actions/upload-artifact@v4
+        with: { name: 'library', path: merged/library, retention-days: 90 }
+      - uses: actions/upload-artifact@v4
+        with: { name: 'merged-catalog', path: merged/catalog.jsonl, retention-days: 90 }

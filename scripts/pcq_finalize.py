@@ -15,8 +15,8 @@ versions = dict(python=platform.python_version(), pyscf=pyscf.__version__, numpy
 RECIPE = dict(
     recipe_version=2,
     source='PubChemQC B3LYP/6-31G*//PM6 (Hugging Face molssiai-hub/pubchemqc-b3lyp, config chon300nosalt), CC-BY-4.0',
-    geometry='PubChemQC B3LYP/6-31G* optimized geometry, used unchanged (Angstrom)',
-    structure_check='PySCF B3LYP/6-31G* with xc="b3lypg" (B3LYP with VWN-RPA, as in Gaussian/GAMESS), Cartesian 6D, grid level 3, must match PubChemQC total energy within 1e-4 Eh',
+    geometry='PubChemQC PM6-optimized geometry (the B3LYP/6-31G*//PM6 set: B3LYP single points on PM6 structures), used unchanged (Angstrom)',
+    structure_check='PySCF B3LYP/6-31G* with xc="b3lypg" (B3LYP with VWN-RPA correlation; the variant that reproduces the PubChemQC energies), Cartesian 6D, grid level 3, conv_tol 1e-9, must match PubChemQC total energy within 1e-4 Eh',
     mean_field='RHF, 6-31G* (spherical), conv_tol 1e-10, must converge; internally stable; stable toward UHF (strict tier)',
     orbitals='canonical RHF orbitals; orthonormality error < 1e-8; HOMO-LUMO gap > 0; degenerate orbitals (same occupation, energies within 1e-5 Eh) fixed by diagonalizing a fixed generic operator inside each block (the Coulomb potential of unit point charges at the atom centroid plus (1.37, 0.71, 0.43) and plus (-0.52, 1.19, -0.88) Bohr, weights 1 and 0.61; eigenvalue order) (cas_edge_degenerate marks molecules where the 8-orbital window cuts through such a block); phase rule: in each orbital the largest-magnitude AO coefficient (the first one within 1e-6 of the maximum) is made positive',
     active_space='8 electrons in 8 orbitals (4 highest occupied + 4 lowest virtual canonical orbitals); inactive core folded into ECORE and 1e integrals',
@@ -72,16 +72,16 @@ for cid, r in sorted(rows.items()):
                         checker=r['checks'][f]['verdict'], e_rhf_reread=e, reread_diff=diff)
     if not ok:
         shutil.rmtree(dst, ignore_errors=True)
-        excluded.append(dict(cid=cid, formula=r['formula'], natoms=r['natoms'], stage='final verification', reason='; '.join(p for p in problems if p.startswith(str(cid))))); continue
+        excluded.append(dict(cid=cid, formula=r['formula'], natoms=r['natoms'], stage='final verification', reason='; '.join(p for p in problems if p.startswith(f'{cid} ')))); continue
     geo = meta['geometry']
     xyz = f'{dst}/pcq{cid}.xyz'
     with open(xyz, 'w') as fh:
-        fh.write(f'{len(geo)}\nPubChem CID {cid} {meta["formula"]} | PubChemQC B3LYP/6-31G* geometry (CC-BY-4.0) | Angstrom\n')
+        fh.write(f'{len(geo)}\nPubChem CID {cid} {meta["formula"]} | PubChemQC PM6-optimized geometry (CC-BY-4.0) | Angstrom\n')
         for z, x, y, zz in geo: fh.write(f'{SYM[z]:<2} {x:16.10f} {y:16.10f} {zz:16.10f}\n')
     files[os.path.basename(xyz)] = dict(sha256=sha(xyz), bytes=os.path.getsize(xyz))
-    entry = {k: meta[k] for k in ['cid', 'formula', 'smiles', 'inchi', 'natoms', 'nelec', 'basis', 'norb', 'e_b3lyp_ours', 'e_b3lyp_pubchemqc', 'b3lyp_diff',
+    entry = {k: meta.get(k) if k == 'dev_ecore_full' else meta[k] for k in ['cid', 'formula', 'smiles', 'inchi', 'natoms', 'nelec', 'basis', 'norb', 'e_b3lyp_ours', 'e_b3lyp_pubchemqc', 'b3lyp_diff',
                                   'e_rhf', 'e_casci_8e8o', 'e_casci_direct', 'homo_lumo_gap', 'orth_err', 'stable_internal', 'stable_external',
-                                  'recipe_version', 'xc', 'degenerate_blocks', 'cas_edge_degenerate', 'dev_h1_cas', 'dev_eri_cas', 'dev_ecore_cas', 'dev_h1_full', 'dev_eri_full']}
+                                  'recipe_version', 'xc', 'degenerate_blocks', 'cas_edge_degenerate', 'dev_h1_cas', 'dev_eri_cas', 'dev_ecore_cas', 'dev_h1_full', 'dev_eri_full', 'dev_ecore_full']}
     entry.update(pubchem_url=f'https://pubchem.ncbi.nlm.nih.gov/compound/{cid}', tier='strict', files=files, recipe=RECIPE)
     json.dump(entry, open(f'{dst}/entry.json', 'w'), indent=1)
     with open(f'{dst}/SHA256SUMS', 'w') as fh:
@@ -91,6 +91,9 @@ for cid, r in sorted(rows.items()):
             if 'sha256_gz' in v: fh.write(f'{v["sha256_gz"]}  {f}\n')
     published.append(entry)
 
+# a directory published by an earlier run whose CID is no longer published (status changed, or gone from the catalog) is removed
+for d in os.listdir(PUB):
+    if d.isdigit() and int(d) not in {e['cid'] for e in published}: shutil.rmtree(f'{PUB}/{d}', ignore_errors=True)
 with open(f'{L}/catalog.jsonl', 'w') as fh:
     for e in published: fh.write(json.dumps({k: v for k, v in e.items() if k != 'recipe'}) + '\n')
 cols = ['cid', 'formula', 'natoms', 'nelec', 'norb', 'e_rhf', 'e_casci_8e8o', 'homo_lumo_gap', 'b3lyp_diff', 'smiles', 'inchi', 'pubchem_url']

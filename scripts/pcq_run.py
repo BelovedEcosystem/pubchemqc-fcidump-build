@@ -6,7 +6,9 @@ recs=[json.loads(l) for l in open(sys.argv[1]) if l.strip()]; W=int(sys.argv[2])
 cat=f'{D}/catalog.jsonl'; done={json.loads(l)['cid'] for l in open(cat)} if os.path.exists(cat) else set()
 def sha(p): return hashlib.sha256(open(p,'rb').read()).hexdigest()
 def one(rec):
-    if rec['cid'] in done: return
+    with lock:   # claim the CID so a repeated record in the input cannot run twice in the same directory
+        if rec['cid'] in done: return
+        done.add(rec['cid'])
     if DEADLINE and time.time()>DEADLINE: return
     t0=time.time(); out=f'{D}/fcidump/{rec["cid"]:09d}'; row=dict(cid=rec['cid'],formula=rec['formula'],natoms=rec['atom-count'])
     tf=tempfile.NamedTemporaryFile('w',suffix='.json',delete=False); json.dump(rec,tf); tf.close()

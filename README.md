@@ -9,9 +9,13 @@ BECOME energy catalog at https://become.belovedecosystem.com/energy/.
 - `scripts/fcidump_check.py` independently checks each FCIDUMP.
 - `scripts/pcq_run.py` runs a batch in parallel and writes `catalog.jsonl`.
 
-The `Build PubChemQC FCIDUMPs` workflow runs this across many GitHub runners at once.
+- `scripts/pcq_merge.py` merges the `out/` directories of several shards into one tree (first shard wins on
+  a duplicate CID; duplicates are listed in `merge_duplicates.jsonl`).
 - `scripts/pcq_finalize.py` re-checks every file and writes the published library (`SHA256SUMS` for the
   uncompressed text, `SHA256SUMS-gz` for the `.gz` archives).
+
+The `Build PubChemQC FCIDUMPs` workflow runs prep and build across many GitHub runners at once, then a
+`finalize` job merges every shard and uploads the published library as the `library` artifact.
 
 Recipe version 2 adds: the functional named explicitly (`b3lypg`), degenerate orbitals fixed by a fixed
 generic operator, a phase rule on every orbital, gzip written with mtime 0, integral re-read checks, a direct

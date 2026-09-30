@@ -34,10 +34,11 @@ atoms = [(z, tuple(c)) for z, c in zip(Z, xyz)]
 # structure check: reproduce PubChemQC's own B3LYP/6-31G*(Cartesian d) energy
 mol6d = gto.M(atom=atoms, basis="6-31g*", cart=True, unit="Angstrom", verbose=0)
 gate(mol6d.nao == rec["basis-count"], f"basis size {mol6d.nao} != {rec['basis-count']}")
-ks = dft.RKS(mol6d, xc="b3lypg")  # B3LYP with VWN-RPA (VWN3), as in Gaussian/GAMESS; same as PySCF>=2.3 "b3lyp"; ks.grids.level = 3; ks.conv_tol = 1e-9
+# xc named explicitly: "b3lypg" is B3LYP with VWN-RPA correlation (what PySCF >= 2.3 calls "b3lyp"; "b3lyp5" differs by
+# ~0.07 Eh for a small organic molecule). Chosen because it reproduces the PubChemQC energies within the 1e-4 Eh gate.
+ks = dft.RKS(mol6d, xc="b3lypg"); ks.grids.level = 3; ks.conv_tol = 1e-9
 e_b3 = ks.kernel(); e_ref = rec["total-energy"] / EV
 gate(ks.converged and abs(e_b3 - e_ref) < 1e-4, f"structure check failed (B3LYP diff {e_b3 - e_ref:.2e} Eh)")
-dm0 = None
 # RHF in the FCIDUMP basis
 mol = gto.M(atom=atoms, basis=BASIS, cart=False, unit="Angstrom", verbose=0)
 nelecas, ncas = 8, 8
@@ -109,7 +110,7 @@ cas.fcisolver.conv_tol = 1e-12
 e_casci_direct = float(cas.kernel()[0])
 gate(abs(e_casci - e_casci_direct) < 1e-8, f"CASCI from file disagrees with direct CASCI ({e_casci - e_casci_direct:.1e})")
 gate(e_casci <= mf.e_tot + 1e-9, "CASCI energy above RHF")
-full = nao <= FULL_MAX_NAO; e_full_file = None; dev_h1_full = dev_eri_full = None
+full = nao <= FULL_MAX_NAO; e_full_file = None; dev_h1_full = dev_eri_full = dev_ecore_full = None
 if full:
     fname = f"FCIDUMP_pcq{rec['cid']}_full"
     h1f = C.T @ mf.get_hcore() @ C; eri8 = ao2mo.full(mol, C)
@@ -125,7 +126,7 @@ meta = dict(cid=rec["cid"], formula=rec["formula"], smiles=smi, inchi=rec["pubch
             basis=BASIS, norb=nao, e_b3lyp_ours=float(e_b3), e_b3lyp_pubchemqc=e_ref, b3lyp_diff=float(e_b3 - e_ref),
             e_rhf=float(mf.e_tot), e_rhf_from_cas_file=e_cas_file, e_rhf_from_full_file=e_full_file, e_casci_8e8o=e_casci,
             homo_lumo_gap=gap, orth_err=orth, recipe_version=2, xc="b3lypg", degenerate_blocks=deg_blocks, degenerate_min_split=deg_split, cas_edge_degenerate=cas_edge_degenerate, e_casci_direct=e_casci_direct,
-            dev_h1_cas=dev_h1_cas, dev_eri_cas=dev_eri_cas, dev_ecore_cas=dev_ecore_cas, dev_h1_full=dev_h1_full, dev_eri_full=dev_eri_full, stable_internal=bool(st_i), stable_external=bool(st_e), full_written=full,
+            dev_h1_cas=dev_h1_cas, dev_eri_cas=dev_eri_cas, dev_ecore_cas=dev_ecore_cas, dev_h1_full=dev_h1_full, dev_eri_full=dev_eri_full, dev_ecore_full=dev_ecore_full, stable_internal=bool(st_i), stable_external=bool(st_e), full_written=full,
             geometry=[[int(z)] + [float(v) for v in c] for z, c in zip(Z, xyz)])
 for f in list(os.listdir(".")):
     if f.startswith("FCIDUMP_") and not f.endswith(".gz"):
