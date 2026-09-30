@@ -1,0 +1,73 @@
+name: Build PubChemQC FCIDUMPs
+
+# Each source file from the PubChemQC B3LYP/6-31G* chon300nosalt set (MolSSI Hugging Face mirror)
+# is streamed once (prep), its small neutral singlets are split into shards, and each shard is
+# converted to CAS(8e,8o) FCIDUMPs on its own runner (build). Results are uploaded as artifacts.
+on:
+  workflow_dispatch:
+    inputs:
+      file_from: { description: 'First source file index (0-86)', required: true, default: '9' }
+      file_to:   { description: 'Last source file index, inclusive', required: true, default: '9' }
+      shards:    { description: 'Runners per source file', required: true, default: '4' }
+      maxorb:    { description: 'Max orbitals', required: true, default: '150' }
+      limit:     { description: 'Molecules per shard (0 = all; for tests)', required: true, default: '0' }
+      budget_min: { description: 'Stop starting new molecules after this many minutes', required: true, default: '320' }
+
+permissions:
+  contents: read
+
+jobs:
+  plan:
+    runs-on: ubuntu-latest
+    outputs:
+      files: ${{ steps.m.outputs.files }}
+      cells: ${{ steps.m.outputs.cells }}
+    steps:
+      - id: m
+        run: |
+          python3 - <<'P' >> "$GITHUB_OUTPUT"
+          import json
+          a,b,s=int("${{ inputs.file_from }}"),int("${{ inputs.file_to }}"),int("${{ inputs.shards }}")
+          f=list(range(a,b+1)); print("files="+json.dumps(f)); print("cells="+json.dumps([dict(file=i,shard=k) for i in f for k in range(s)]))
+          P
+
+  prep:
+    needs: plan
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix: { file: '${{ fromJSON(needs.plan.outputs.files) }}' }
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: '3.13' }
+      - run: python scripts/pcq_prep.py ${{ matrix.file }} ${{ inputs.shards }} ${{ inputs.maxorb }} ${{ inputs.limit }}
+      - uses: actions/upload-artifact@v4
+        with: { name: 'cand-${{ matrix.file }}', path: cand, retention-days: 7 }
+
+  build:
+    needs: [plan, prep]
+    runs-on: ubuntu-latest
+    timeout-minutes: 355
+    strategy:
+      fail-fast: false
+      matrix: { cell: '${{ fromJSON(needs.plan.outputs.cells) }}' }
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: '3.13', cache: pip, cache-dependency-path: requirements.txt }
+      - run: pip install -r requirements.txt
+      - uses: actions/download-artifact@v4
+        with: { name: 'cand-${{ matrix.cell.file }}', path: cand }
+      - name: Convert molecules
+        env: { PCQ_OUT: out, STRICT_EXTERNAL: '1' }
+        run: |
+          export DEADLINE=$(( $(date +%s) + ${{ inputs.budget_min }} * 60 ))
+          mkdir -p out/fcidump
+          wc -l cand/shard${{ matrix.cell.shard }}.jsonl
+          python scripts/pcq_run.py cand/shard${{ matrix.cell.shard }}.jsonl $(nproc)
+          cp cand/summary.json out/source_summary.json
+          echo "rows=$(wc -l < out/catalog.jsonl) ok=$(grep -c '"status": "ok"' out/catalog.jsonl || true)"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with: { name: 'out-${{ matrix.cell.file }}-${{ matrix.cell.shard }}', path: out, retention-days: 30 }
