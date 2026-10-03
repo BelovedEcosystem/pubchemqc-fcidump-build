@@ -4,7 +4,10 @@ Scripts that turn PubChemQC B3LYP/6-31G* records (Nakata and colleagues, CC-BY-4
 mirror on Hugging Face, `molssiai-hub/pubchemqc-b3lyp`) into CAS(8e,8o) FCIDUMP files with PySCF, for the
 BECOME energy catalog at https://become.belovedecosystem.com/energy/.
 
-- `scripts/pcq_prep.py` streams one source file and keeps neutral singlets with at most 150 orbitals.
+- `scripts/pcq_prep.py` streams one source file of a subset (`chon300nosalt` or `chnopsfcl300nosalt`), keeps neutral
+  singlets with at most 150 orbitals, drops CIDs in an optional skip list (molecules an earlier build already
+  processed, e.g. `data/done_cids_chon300nosalt_v2.txt.gz`), and with `shards=auto` sizes the shard count to the
+  candidate count so dense files finish inside the per-job time budget.
 - `scripts/pcq_convert.py` rebuilds RHF in 6-31G*, checks it against PubChemQC, and writes the FCIDUMP.
 - `scripts/fcidump_check.py` independently checks each FCIDUMP.
 - `scripts/pcq_run.py` runs a batch in parallel and writes `catalog.jsonl`.

@@ -1,17 +1,21 @@
 name: Build PubChemQC FCIDUMPs
 
-# Each source file from the PubChemQC B3LYP/6-31G* chon300nosalt set (MolSSI Hugging Face mirror)
-# is streamed once (prep), its small neutral singlets are split into shards, and each shard is
-# converted to CAS(8e,8o) FCIDUMPs on its own runner (build). Results are uploaded as artifacts.
+# Each source file from a PubChemQC B3LYP/6-31G* subset (MolSSI Hugging Face mirror; chon300nosalt or
+# chnopsfcl300nosalt) is streamed once (prep), its small neutral singlets not already processed by an earlier build
+# (skip list) are split into shards, and each shard is converted to CAS(8e,8o) FCIDUMPs on its own runner (build).
+# shards=auto sizes each file's shard count to its candidate count so dense files finish inside the time budget.
 on:
   workflow_dispatch:
     inputs:
-      file_from: { description: 'First source file index (0-86)', required: true, default: '9' }
+      file_from: { description: 'First source file index (chon300nosalt 0-86, chnopsfcl300nosalt 0-148)', required: true, default: '9' }
       file_to:   { description: 'Last source file index, inclusive', required: true, default: '9' }
-      shards:    { description: 'Runners per source file', required: true, default: '4' }
+      shards:    { description: 'Runners per source file, or auto (ceil(candidates/per_shard))', required: true, default: '4' }
       maxorb:    { description: 'Max orbitals', required: true, default: '150' }
       limit:     { description: 'Molecules per shard (0 = all; for tests)', required: true, default: '0' }
       budget_min: { description: 'Stop starting new molecules after this many minutes (job limit 355 min; one molecule may take up to 120 min, so keep this <= 230)', required: true, default: '230' }
+      subset:    { description: 'PubChemQC subset (b3lyp_pm6_<subset>)', required: true, default: 'chon300nosalt' }
+      skip:      { description: 'Skip list of CIDs already processed (path in repo, empty = none)', required: false, default: '' }
+      per_shard: { description: 'Candidates per shard when shards=auto (max 64 shards per file)', required: true, default: '500' }
 
 permissions:
   contents: read
@@ -21,14 +25,13 @@ jobs:
     runs-on: ubuntu-latest
     outputs:
       files: ${{ steps.m.outputs.files }}
-      cells: ${{ steps.m.outputs.cells }}
     steps:
       - id: m
         run: |
           python3 - <<'P' >> "$GITHUB_OUTPUT"
           import json
-          a,b,s=int("${{ inputs.file_from }}"),int("${{ inputs.file_to }}"),int("${{ inputs.shards }}")
-          f=list(range(a,b+1)); print("files="+json.dumps(f)); print("cells="+json.dumps([dict(file=i,shard=k) for i in f for k in range(s)]))
+          a,b=int("${{ inputs.file_from }}"),int("${{ inputs.file_to }}")
+          print("files="+json.dumps(list(range(a,b+1))))
           P
 
   prep:
@@ -41,17 +44,38 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with: { python-version: '3.13' }
-      - run: python scripts/pcq_prep.py ${{ matrix.file }} ${{ inputs.shards }} ${{ inputs.maxorb }} ${{ inputs.limit }}
+      - run: python scripts/pcq_prep.py ${{ matrix.file }} ${{ inputs.shards }} ${{ inputs.maxorb }} ${{ inputs.limit }} ${{ inputs.subset }} "${{ inputs.skip }}" ${{ inputs.per_shard }} 64
       - uses: actions/upload-artifact@v4
         with: { name: 'cand-${{ matrix.file }}', path: cand, retention-days: 7 }
 
+  # one build cell per (file, shard), using the shard count each prep job chose
+  cells:
+    needs: prep
+    runs-on: ubuntu-latest
+    outputs:
+      cells: ${{ steps.c.outputs.cells }}
+    steps:
+      - uses: actions/download-artifact@v4
+        with: { pattern: 'cand-*', path: cand }
+      - id: c
+        run: |
+          python3 - <<'P' >> "$GITHUB_OUTPUT"
+          import json, glob
+          cells=[]
+          for p in sorted(glob.glob('cand/cand-*/summary.json')):
+              d=json.load(open(p)); cells+=[dict(file=d['index'],shard=k) for k,n in enumerate(d['shards']) if n>0]
+          assert len(cells)<=256, f'{len(cells)} cells exceed the 256-job matrix limit; dispatch fewer files'
+          print("cells="+json.dumps(cells))
+          P
+
   build:
-    needs: [plan, prep]
+    needs: [plan, prep, cells]
+    if: ${{ needs.cells.outputs.cells != '[]' }}
     runs-on: ubuntu-latest
     timeout-minutes: 355
     strategy:
       fail-fast: false
-      matrix: { cell: '${{ fromJSON(needs.plan.outputs.cells) }}' }
+      matrix: { cell: '${{ fromJSON(needs.cells.outputs.cells) }}' }
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -89,7 +113,7 @@ jobs:
       - name: Merge shards and finalize
         run: |
           python scripts/pcq_merge.py merged shards/out-*
-          PCQ_DIR=merged python scripts/pcq_finalize.py
+          PCQ_DIR=merged PCQ_SUBSET=${{ inputs.subset }} python scripts/pcq_finalize.py
       - uses: actions/upload-artifact@v4
         with: { name: 'library', path: merged/library, retention-days: 90 }
       - uses: actions/upload-artifact@v4

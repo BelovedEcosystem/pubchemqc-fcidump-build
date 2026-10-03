@@ -1,10 +1,19 @@
-"""usage: pcq_prep.py <file-index> <shards> [MAXORB=150] [LIMIT=0]
-Stream one PubChemQC chon300nosalt JSON file from Hugging Face, keep neutral singlets with
-<= MAXORB orbitals (basis-count - heavy-atom-count), and split them round-robin into shard files
-cand/shard<k>.jsonl. LIMIT>0 keeps only the first LIMIT candidates per shard (for test runs)."""
-import sys, os, json, urllib.request, time
-idx=int(sys.argv[1]); S=int(sys.argv[2]); MAXORB=int(sys.argv[3]) if len(sys.argv)>3 else 150; LIMIT=int(sys.argv[4]) if len(sys.argv)>4 else 0
-API='https://huggingface.co/api/datasets/molssiai-hub/pubchemqc-b3lyp/tree/main/data/b3lyp_pm6_chon300nosalt/train'
+"""usage: pcq_prep.py <file-index> <shards|auto> [MAXORB=150] [LIMIT=0] [SUBSET=chon300nosalt] [SKIP=] [PER_SHARD=500] [MAX_SHARDS=64]
+Stream one PubChemQC JSON file of the given subset (b3lyp_pm6_<SUBSET>) from Hugging Face, keep neutral singlets
+with <= MAXORB orbitals (basis-count - heavy-atom-count), drop CIDs listed in SKIP (a gzipped or plain text file,
+one CID per line: molecules an earlier build already processed), and split the rest round-robin into shard files
+cand/shard<k>.jsonl. shards=auto picks ceil(candidates/PER_SHARD) shards (1..MAX_SHARDS) so a dense file is not cut
+off by the per-job time budget. LIMIT>0 keeps only the first LIMIT candidates per shard (for test runs).
+cand/summary.json records the counts, including candidates with P, S, F or Cl ("new_element") vs CHON only."""
+import sys, os, json, urllib.request, time, gzip, math
+A=sys.argv+['']*8
+idx=int(A[1]); S_ARG=A[2]; MAXORB=int(A[3] or 150); LIMIT=int(A[4] or 0); SUBSET=A[5] or 'chon300nosalt'; SKIP=A[6]
+PER=int(A[7] or 500); MAXS=int(A[8] or 64)
+skip=set()
+if SKIP:
+    with (gzip.open(SKIP,'rt') if SKIP.endswith('.gz') else open(SKIP)) as fh: skip={int(l) for l in fh if l.strip()}
+NEWZ={9,15,16,17}
+API=f'https://huggingface.co/api/datasets/molssiai-hub/pubchemqc-b3lyp/tree/main/data/b3lyp_pm6_{SUBSET}/train'
 RES='https://huggingface.co/datasets/molssiai-hub/pubchemqc-b3lyp/resolve/main/'
 files=sorted(x['path'] for x in json.load(urllib.request.urlopen(API)) if x['path'].endswith('.json'))
 f=files[idx]; print('file',idx,f,flush=True)
@@ -30,8 +39,8 @@ def lines(url):
             tries+=1; log('reconnect',off,repr(e)[:120])
             if tries>20: raise
             time.sleep(min(60,5*tries))
-os.makedirs('cand',exist_ok=True); outs=[open(f'cand/shard{k}.jsonl','w') for k in range(S)]; n=[0]*S
-scanned=small=0; buf=None
+os.makedirs('cand',exist_ok=True); keep=[]
+scanned=small=skipped=0; buf=None
 for raw in lines(RES+f):
     line=raw.decode().rstrip('\n')
     if line=='    {': buf=['{']; continue
@@ -40,12 +49,19 @@ for raw in lines(RES+f):
         buf.append('}'); r=json.loads(''.join(buf)); buf=None; scanned+=1
         if r.get('multiplicity')!=1 or abs(r.get('charge',1))>1e-9: continue
         if r['basis-count']-r['heavy-atom-count']>MAXORB: continue
-        k=small%S; small+=1
-        if LIMIT and n[k]>=LIMIT:
-            if all(x>=LIMIT for x in n): break
-            continue
-        outs[k].write(json.dumps(r)+'\n'); n[k]+=1
+        small+=1
+        if r['cid'] in skip: skipped+=1; continue
+        keep.append(json.dumps(r))
     else: buf.append(line)
+S=max(1,min(MAXS,math.ceil(len(keep)/PER))) if S_ARG=='auto' else int(S_ARG)
+outs=[open(f'cand/shard{k}.jsonl','w') for k in range(S)]; n=[0]*S; newel=0
+for i,j in enumerate(keep):
+    k=i%S
+    if LIMIT and n[k]>=LIMIT: continue
+    outs[k].write(j+'\n'); n[k]+=1
+    newel+=bool(set(json.loads(j)['atomic-numbers'])&NEWZ)
 for o in outs: o.close()
-json.dump(dict(file=f,index=idx,scanned=scanned,small=small,shards=n),open('cand/summary.json','w'))
-log('done',json.dumps(dict(scanned=scanned,small=small,shards=n)))
+summ=dict(file=f,index=idx,subset=SUBSET,scanned=scanned,small=small,skipped_already_done=skipped,candidates=sum(n),
+          new_element=newel,chon_only=sum(n)-newel,nshards=S,shards=n)
+json.dump(summ,open('cand/summary.json','w'))
+log('done',json.dumps(summ))
