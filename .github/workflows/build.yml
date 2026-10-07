@@ -16,6 +16,7 @@ on:
       subset:    { description: 'PubChemQC subset (b3lyp_pm6_<subset>)', required: true, default: 'chon300nosalt' }
       skip:      { description: 'Skip list of CIDs already processed (path in repo, empty = none)', required: false, default: '' }
       per_shard: { description: 'Candidates per shard when shards=auto (max 64 shards per file)', required: true, default: '500' }
+      pool:      { description: 'Pooled mode: 0 = off (one prep job per file); N>0 = scan the files in up to 24 grouped prep jobs, pool all candidates (metal-free, single-fragment) and build them in N shards', required: true, default: '0' }
 
 permissions:
   contents: read
@@ -31,7 +32,9 @@ jobs:
           python3 - <<'P' >> "$GITHUB_OUTPUT"
           import json
           a,b=int("${{ inputs.file_from }}"),int("${{ inputs.file_to }}")
-          print("files="+json.dumps(list(range(a,b+1))))
+          if "${{ inputs.pool }}"=="0": print("files="+json.dumps(list(range(a,b+1))))
+          else:   # pooled mode: contiguous groups of files, at most 24 prep jobs
+              n=b-a+1; g=min(24,n); k=-(-n//g); print("files="+json.dumps([f"{i}-{min(b,i+k-1)}" for i in range(a,b+1,k)]))
           P
 
   prep:
@@ -39,12 +42,19 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
+      max-parallel: 16   # leave runner slots (account limit 20) for other repos' workflows
       matrix: { file: '${{ fromJSON(needs.plan.outputs.files) }}' }
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with: { python-version: '3.13' }
-      - run: python scripts/pcq_prep.py ${{ matrix.file }} ${{ inputs.shards }} ${{ inputs.maxorb }} ${{ inputs.limit }} ${{ inputs.subset }} "${{ inputs.skip }}" ${{ inputs.per_shard }} 64
+      - if: ${{ inputs.pool == '0' }}
+        run: python scripts/pcq_prep.py ${{ matrix.file }} ${{ inputs.shards }} ${{ inputs.maxorb }} ${{ inputs.limit }} ${{ inputs.subset }} "${{ inputs.skip }}" ${{ inputs.per_shard }} 64
+      - if: ${{ inputs.pool != '0' }}
+        env: { PCQ_EXCLUDE_Z: '11,12,19,20', PCQ_NO_MULTIFRAG: '1' }   # Na, Mg, K, Ca
+        run: |
+          r="${{ matrix.file }}"
+          python scripts/pcq_prep_group.py "${r%-*}" "${r#*-}" ${{ inputs.maxorb }} ${{ inputs.subset }} "${{ inputs.skip }}" 4
       - uses: actions/upload-artifact@v4
         with: { name: 'cand-${{ matrix.file }}', path: cand, retention-days: 7 }
 
@@ -55,8 +65,14 @@ jobs:
     outputs:
       cells: ${{ steps.c.outputs.cells }}
     steps:
+      - uses: actions/checkout@v4
       - uses: actions/download-artifact@v4
         with: { pattern: 'cand-*', path: cand }
+      - if: ${{ inputs.pool != '0' }}
+        run: python3 scripts/pcq_pool.py cand ${{ inputs.pool }} pool && rm -rf cand && mkdir -p cand/cand-pool && mv pool/* cand/cand-pool/
+      - if: ${{ inputs.pool != '0' }}
+        uses: actions/upload-artifact@v4
+        with: { name: 'cand-pool', path: cand/cand-pool, retention-days: 30 }
       - id: c
         run: |
           python3 - <<'P' >> "$GITHUB_OUTPUT"
