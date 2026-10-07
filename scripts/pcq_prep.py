@@ -7,6 +7,8 @@ off by the per-job time budget. LIMIT>0 keeps only the first LIMIT candidates pe
 cand/summary.json records the counts, including candidates with P, S, F or Cl ("new_element") vs CHON only.
 Optional environment (defaults keep the original behaviour):
   PCQ_EXCLUDE_Z   comma-separated atomic numbers; small neutral singlets containing any of them are dropped (counted)
+  PCQ_ALLOW_Z     comma-separated atomic numbers; small neutral singlets with any other element are dropped (counted
+                  with excluded_element), e.g. the elements pcq_convert.py accepts
   PCQ_NO_MULTIFRAG=1  drop small neutral singlets whose PubChem SMILES has several fragments ('.'), counted and listed
                   in <out>/multifrag.jsonl (pcq_convert.py would reject them anyway: "multiple fragments")
   PCQ_FILES       JSON file with the Hugging Face tree listing (avoids one API call per file)
@@ -20,6 +22,7 @@ if SKIP:
     with (gzip.open(SKIP,'rt') if SKIP.endswith('.gz') else open(SKIP)) as fh: skip={int(l) for l in fh if l.strip()}
 NEWZ={9,15,16,17}
 EXZ={int(z) for z in os.environ.get('PCQ_EXCLUDE_Z','').split(',') if z.strip()}
+ALZ={int(z) for z in os.environ.get('PCQ_ALLOW_Z','').split(',') if z.strip()}
 NOMF=os.environ.get('PCQ_NO_MULTIFRAG')=='1'; OUT=os.environ.get('PCQ_OUTDIR','cand'); FL=os.environ.get('PCQ_FILES')
 API=f'https://huggingface.co/api/datasets/molssiai-hub/pubchemqc-b3lyp/tree/main/data/b3lyp_pm6_{SUBSET}/train'
 RES='https://huggingface.co/datasets/molssiai-hub/pubchemqc-b3lyp/resolve/main/'
@@ -59,6 +62,7 @@ for raw in lines(RES+f):
         if r['basis-count']-r['heavy-atom-count']>MAXORB: continue
         small_all+=1
         if EXZ and set(r['atomic-numbers'])&EXZ: metal+=1; continue
+        if ALZ and not set(r['atomic-numbers'])<=ALZ: metal+=1; continue
         if NOMF and '.' in r.get('pubchem-isomeric-smiles',''):
             multifrag+=1; mf.append(dict(cid=r['cid'],formula=r['formula'],smiles=r.get('pubchem-isomeric-smiles',''),already_done=r['cid'] in skip)); continue
         small+=1
@@ -75,8 +79,8 @@ for i,j in enumerate(keep):
 for o in outs: o.close()
 summ=dict(file=f,index=idx,subset=SUBSET,scanned=scanned,small=small,skipped_already_done=skipped,candidates=sum(n),
           new_element=newel,chon_only=sum(n)-newel,nshards=S,shards=n)
-if EXZ or NOMF:
-    summ.update(small_neutral_singlets_all=small_all,excluded_z=sorted(EXZ),excluded_element=metal,excluded_multifragment=multifrag)
+if EXZ or ALZ or NOMF:
+    summ.update(small_neutral_singlets_all=small_all,excluded_z=sorted(EXZ),allowed_z=sorted(ALZ),excluded_element=metal,excluded_multifragment=multifrag)
     with open(f'{OUT}/multifrag.jsonl','w') as fh: fh.writelines(json.dumps(x)+'\n' for x in mf)
 json.dump(summ,open(f'{OUT}/summary.json','w'))
 log('done',json.dumps(summ))
