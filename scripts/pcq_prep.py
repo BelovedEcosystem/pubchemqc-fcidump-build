@@ -24,7 +24,7 @@ NEWZ={9,15,16,17}
 EXZ={int(z) for z in os.environ.get('PCQ_EXCLUDE_Z','').split(',') if z.strip()}
 ALZ={int(z) for z in os.environ.get('PCQ_ALLOW_Z','').split(',') if z.strip()}
 NOMF=os.environ.get('PCQ_NO_MULTIFRAG')=='1'; OUT=os.environ.get('PCQ_OUTDIR','cand'); FL=os.environ.get('PCQ_FILES')
-API=f'https://huggingface.co/api/datasets/molssiai-hub/pubchemqc-b3lyp/tree/main/data/b3lyp_pm6_{SUBSET}/train'
+API=f'https://huggingface.co/api/datasets/molssiai-hub/pubchemqc-b3lyp/tree/main/data/{SUBSET if SUBSET.startswith('b3lyp_pm6') else 'b3lyp_pm6_'+SUBSET}/train'
 RES='https://huggingface.co/datasets/molssiai-hub/pubchemqc-b3lyp/resolve/main/'
 files=sorted(x['path'] for x in json.load(open(FL) if FL else urllib.request.urlopen(API)) if x['path'].endswith('.json'))
 f=files[idx]; print('file',idx,f,flush=True)

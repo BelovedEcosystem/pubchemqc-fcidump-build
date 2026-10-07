@@ -7,7 +7,7 @@ import sys, os, json, subprocess, time, urllib.request, concurrent.futures as cf
 a, b, MAXORB, SUBSET, SKIP = int(sys.argv[1]), int(sys.argv[2]), sys.argv[3], sys.argv[4], sys.argv[5]
 P = int(sys.argv[6]) if len(sys.argv) > 6 else 4
 HERE = os.path.dirname(os.path.abspath(__file__)); os.makedirs('cand', exist_ok=True)
-API = f'https://huggingface.co/api/datasets/molssiai-hub/pubchemqc-b3lyp/tree/main/data/b3lyp_pm6_{SUBSET}/train'
+API = f'https://huggingface.co/api/datasets/molssiai-hub/pubchemqc-b3lyp/tree/main/data/{SUBSET if SUBSET.startswith('b3lyp_pm6') else 'b3lyp_pm6_'+SUBSET}/train'
 for t in range(10):
     try: lst = json.load(urllib.request.urlopen(API, timeout=120)); break
     except Exception as e: print('tree listing retry', t, repr(e)[:120], flush=True); time.sleep(10 * (t + 1))
