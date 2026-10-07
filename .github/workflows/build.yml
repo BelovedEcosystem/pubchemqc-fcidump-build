@@ -51,7 +51,7 @@ jobs:
       - if: ${{ inputs.pool == '0' }}
         run: python scripts/pcq_prep.py ${{ matrix.file }} ${{ inputs.shards }} ${{ inputs.maxorb }} ${{ inputs.limit }} ${{ inputs.subset }} "${{ inputs.skip }}" ${{ inputs.per_shard }} 64
       - if: ${{ inputs.pool != '0' }}
-        env: { PCQ_ALLOW_Z: '1,5,6,7,8,9,14,15,16,17,35', PCQ_NO_MULTIFRAG: '1' }   # only elements pcq_convert.py accepts (H B C N O F Si P S Cl Br)
+        env: { PCQ_ALLOW_Z: '1,5,6,7,8,9,14,15,16,17,35', PCQ_NO_MULTIFRAG: '1', PCQ_MINORB: '150' }   # only elements pcq_convert.py accepts (H B C N O F Si P S Cl Br)
         run: |
           r="${{ matrix.file }}"
           python scripts/pcq_prep_group.py "${r%-*}" "${r#*-}" ${{ inputs.maxorb }} ${{ inputs.subset }} "${{ inputs.skip }}" 4

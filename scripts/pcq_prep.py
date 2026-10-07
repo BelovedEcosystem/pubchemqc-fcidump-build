@@ -12,7 +12,8 @@ Optional environment (defaults keep the original behaviour):
   PCQ_NO_MULTIFRAG=1  drop small neutral singlets whose PubChem SMILES has several fragments ('.'), counted and listed
                   in <out>/multifrag.jsonl (pcq_convert.py would reject them anyway: "multiple fragments")
   PCQ_FILES       JSON file with the Hugging Face tree listing (avoids one API call per file)
-  PCQ_OUTDIR      output directory (default cand)"""
+  PCQ_OUTDIR      output directory (default cand)
+  PCQ_MINORB      keep only molecules with MORE than this many orbitals (selection only; default 0)"""
 import sys, os, json, urllib.request, time, gzip, math
 A=sys.argv+['']*8
 idx=int(A[1]); S_ARG=A[2]; MAXORB=int(A[3] or 150); LIMIT=int(A[4] or 0); SUBSET=A[5] or 'chon300nosalt'; SKIP=A[6]
@@ -23,7 +24,7 @@ if SKIP:
 NEWZ={9,15,16,17}
 EXZ={int(z) for z in os.environ.get('PCQ_EXCLUDE_Z','').split(',') if z.strip()}
 ALZ={int(z) for z in os.environ.get('PCQ_ALLOW_Z','').split(',') if z.strip()}
-NOMF=os.environ.get('PCQ_NO_MULTIFRAG')=='1'; OUT=os.environ.get('PCQ_OUTDIR','cand'); FL=os.environ.get('PCQ_FILES')
+NOMF=os.environ.get('PCQ_NO_MULTIFRAG')=='1'; OUT=os.environ.get('PCQ_OUTDIR','cand'); FL=os.environ.get('PCQ_FILES'); MINORB=int(os.environ.get('PCQ_MINORB','0') or 0)
 API=f'https://huggingface.co/api/datasets/molssiai-hub/pubchemqc-b3lyp/tree/main/data/{SUBSET if SUBSET.startswith('b3lyp_pm6') else 'b3lyp_pm6_'+SUBSET}/train'
 RES='https://huggingface.co/datasets/molssiai-hub/pubchemqc-b3lyp/resolve/main/'
 files=sorted(x['path'] for x in json.load(open(FL) if FL else urllib.request.urlopen(API)) if x['path'].endswith('.json'))
@@ -60,6 +61,7 @@ for raw in lines(RES+f):
         buf.append('}'); r=json.loads(''.join(buf)); buf=None; scanned+=1
         if r.get('multiplicity')!=1 or abs(r.get('charge',1))>1e-9: continue
         if r['basis-count']-r['heavy-atom-count']>MAXORB: continue
+        if r['basis-count']-r['heavy-atom-count']<=MINORB: continue
         small_all+=1
         if EXZ and set(r['atomic-numbers'])&EXZ: metal+=1; continue
         if ALZ and not set(r['atomic-numbers'])<=ALZ: metal+=1; continue
