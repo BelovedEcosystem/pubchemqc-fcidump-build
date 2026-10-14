@@ -21,6 +21,6 @@ The `Build PubChemQC FCIDUMPs` workflow runs prep and build across many GitHub r
 `finalize` job merges every shard and uploads the published library as the `library` artifact.
 
 Recipe version 2 adds: the functional named explicitly (`b3lypg`), degenerate orbitals fixed by a fixed
-generic operator, a phase rule on every orbital, gzip written with mtime 0, integral re-read checks, a direct
-CASCI cross-check, and a gate rejecting molecules too small for an 8e8o active space. Repeat runs agree within
+generic operator, a phase rule on every orbital, gzip written with mtime 0, integral re-read checks (no correlated energy is computed or stored),
+and a gate rejecting molecules too small for an 8e8o active space. Repeat runs agree within
 about 1e-9 in every integral but are not byte-identical, so compare files by tolerance, not by hash.
