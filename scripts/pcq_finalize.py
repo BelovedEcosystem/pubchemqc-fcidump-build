@@ -21,7 +21,7 @@ RECIPE = dict(
     orbitals='canonical RHF orbitals; orthonormality error < 1e-8; HOMO-LUMO gap > 0; degenerate orbitals (same occupation, energies within 1e-5 Eh) fixed by diagonalizing a fixed generic operator inside each block (the Coulomb potential of unit point charges at the atom centroid plus (1.37, 0.71, 0.43) and plus (-0.52, 1.19, -0.88) Bohr, weights 1 and 0.61; eigenvalue order) (cas_edge_degenerate marks molecules where the 8-orbital window cuts through such a block); phase rule: in each orbital the largest-magnitude AO coefficient (the first one within 1e-6 of the maximum) is made positive',
     active_space='8 electrons in 8 orbitals (4 highest occupied + 4 lowest virtual canonical orbitals); inactive core folded into ECORE and 1e integrals',
     full_file='written when the basis has <= 60 orbitals (all orbitals, no frozen core)',
-    verification='each file re-read from disk reproduces its one- and two-electron integrals and core energy within 1e-10 and the RHF energy within 1e-8 Eh; CASCI(8e,8o) from the file matches a direct PySCF CASCI within 1e-8 Eh; independent fcidump_check.py verdict ACCEPTED',
+    verification='each file re-read from disk reproduces its one- and two-electron integrals and core energy within 1e-10 and the RHF energy within 1e-8 Eh; independent fcidump_check.py verdict ACCEPTED',
     hashes='sha256 = SHA-256 of the uncompressed FCIDUMP text (the identifier; listed in SHA256SUMS against the uncompressed filename, so gunzip then sha256sum matches); sha256_gz = SHA-256 of the .gz archive (listed in SHA256SUMS-gz); archives are written with gzip mtime 0',
     reproducibility='files are not guaranteed byte-identical between runs, even on the same machine and software (floating-point summation order varies at the last digit); repeat runs, including different thread counts, agree within about 1e-9 in every integral, so equivalence is by integral tolerance, not by hash',
     software=versions)
@@ -80,7 +80,7 @@ for cid, r in sorted(rows.items()):
         for z, x, y, zz in geo: fh.write(f'{SYM[z]:<2} {x:16.10f} {y:16.10f} {zz:16.10f}\n')
     files[os.path.basename(xyz)] = dict(sha256=sha(xyz), bytes=os.path.getsize(xyz))
     entry = {k: meta.get(k) if k == 'dev_ecore_full' else meta[k] for k in ['cid', 'formula', 'smiles', 'inchi', 'natoms', 'nelec', 'basis', 'norb', 'e_b3lyp_ours', 'e_b3lyp_pubchemqc', 'b3lyp_diff',
-                                  'e_rhf', 'e_casci_8e8o', 'e_casci_direct', 'homo_lumo_gap', 'orth_err', 'stable_internal', 'stable_external',
+                                  'e_rhf', 'homo_lumo_gap', 'orth_err', 'stable_internal', 'stable_external',
                                   'recipe_version', 'xc', 'degenerate_blocks', 'cas_edge_degenerate', 'dev_h1_cas', 'dev_eri_cas', 'dev_ecore_cas', 'dev_h1_full', 'dev_eri_full', 'dev_ecore_full']}
     entry.update(pubchem_url=f'https://pubchem.ncbi.nlm.nih.gov/compound/{cid}', tier='strict', files=files, recipe=RECIPE)
     json.dump(entry, open(f'{dst}/entry.json', 'w'), indent=1)
@@ -96,7 +96,7 @@ for d in os.listdir(PUB):
     if d.isdigit() and int(d) not in {e['cid'] for e in published}: shutil.rmtree(f'{PUB}/{d}', ignore_errors=True)
 with open(f'{L}/catalog.jsonl', 'w') as fh:
     for e in published: fh.write(json.dumps({k: v for k, v in e.items() if k != 'recipe'}) + '\n')
-cols = ['cid', 'formula', 'natoms', 'nelec', 'norb', 'e_rhf', 'e_casci_8e8o', 'homo_lumo_gap', 'b3lyp_diff', 'smiles', 'inchi', 'pubchem_url']
+cols = ['cid', 'formula', 'natoms', 'nelec', 'norb', 'e_rhf', 'homo_lumo_gap', 'b3lyp_diff', 'smiles', 'inchi', 'pubchem_url']
 with open(f'{L}/catalog.csv', 'w', newline='') as fh:
     w = csv.DictWriter(fh, cols, extrasaction='ignore'); w.writeheader(); [w.writerow(e) for e in published]
 with open(f'{L}/excluded.csv', 'w', newline='') as fh:

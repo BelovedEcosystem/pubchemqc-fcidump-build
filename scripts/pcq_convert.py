@@ -8,7 +8,7 @@ We take only the structure from PubChemQC and redo everything ourselves in PySCF
              coefficient (first one, within 1e-6) is made positive
   files      8e8o active-space FCIDUMP (+ full FCIDUMP when <= FULL_MAX_NAO orbitals);
              each file is re-read and must reproduce its integrals to 1e-10 and the RHF energy to 1e-8 Eh;
-             CASCI from the file must match a direct PySCF CASCI to 1e-8 Eh; gzip written with mtime 0
+             gzip written with mtime 0; no correlated (CASCI/FCI) energy is computed or stored
   degenerate orbitals (same occupation, energies within 1e-5 Eh) are fixed by diagonalizing a fixed
              generic point-charge Coulomb operator inside each block, before the phase rule
 Recipe version 2."""
@@ -79,7 +79,7 @@ def canon(C):
     return C
 Cfix, deg_blocks, deg_split = fix_degenerate(mf.mo_coeff, mf.mo_energy, mf.mo_occ)
 gate(deg_blocks == 0 or deg_split > 1e-6, f"degenerate orbitals could not be fixed (split {deg_split})")
-mf.mo_coeff = canon(Cfix)  # CASCI below reads orbitals from mf
+mf.mo_coeff = canon(Cfix)  # active space below reads orbitals from mf
 C, occ, eps = mf.mo_coeff, mf.mo_occ, mf.mo_energy
 nao = C.shape[1]; nocc = mol.nelectron // 2
 orth = float(np.abs(C.T @ mol.intor("int1e_ovlp") @ C - np.eye(nao)).max())
@@ -105,11 +105,6 @@ dev_ecore_cas = float(abs(r["ECORE"] - ecore))
 gate(max(dev_h1_cas, dev_eri_cas, dev_ecore_cas) < 1e-10, f"active-space file does not reproduce its integrals ({max(dev_h1_cas, dev_eri_cas, dev_ecore_cas):.1e})")
 e_cas_file = e_rhf_from(r["H1"], ao2mo.restore(1, r["H2"], r["NORB"]), r["ECORE"], nelecas // 2)
 gate(abs(e_cas_file - mf.e_tot) < 1e-8, f"active-space file does not reproduce RHF energy ({e_cas_file - mf.e_tot:.1e})")
-e_casci = float(fci.direct_spin1.kernel(r["H1"], ao2mo.restore(1, r["H2"], ncas), ncas, (4, 4), tol=1e-12)[0] + r["ECORE"])
-cas.fcisolver.conv_tol = 1e-12
-e_casci_direct = float(cas.kernel()[0])
-gate(abs(e_casci - e_casci_direct) < 1e-8, f"CASCI from file disagrees with direct CASCI ({e_casci - e_casci_direct:.1e})")
-gate(e_casci <= mf.e_tot + 1e-9, "CASCI energy above RHF")
 full = nao <= FULL_MAX_NAO; e_full_file = None; dev_h1_full = dev_eri_full = dev_ecore_full = None
 if full:
     fname = f"FCIDUMP_pcq{rec['cid']}_full"
@@ -124,8 +119,8 @@ if full:
     gate(abs(e_full_file - mf.e_tot) < 1e-8, f"full file does not reproduce RHF energy ({e_full_file - mf.e_tot:.1e})")
 meta = dict(cid=rec["cid"], formula=rec["formula"], smiles=smi, inchi=rec["pubchem-inchi"], natoms=mol.natm, nelec=mol.nelectron,
             basis=BASIS, norb=nao, e_b3lyp_ours=float(e_b3), e_b3lyp_pubchemqc=e_ref, b3lyp_diff=float(e_b3 - e_ref),
-            e_rhf=float(mf.e_tot), e_rhf_from_cas_file=e_cas_file, e_rhf_from_full_file=e_full_file, e_casci_8e8o=e_casci,
-            homo_lumo_gap=gap, orth_err=orth, recipe_version=2, xc="b3lypg", degenerate_blocks=deg_blocks, degenerate_min_split=deg_split, cas_edge_degenerate=cas_edge_degenerate, e_casci_direct=e_casci_direct,
+            e_rhf=float(mf.e_tot), e_rhf_from_cas_file=e_cas_file, e_rhf_from_full_file=e_full_file,
+            homo_lumo_gap=gap, orth_err=orth, recipe_version=2, xc="b3lypg", degenerate_blocks=deg_blocks, degenerate_min_split=deg_split, cas_edge_degenerate=cas_edge_degenerate,
             dev_h1_cas=dev_h1_cas, dev_eri_cas=dev_eri_cas, dev_ecore_cas=dev_ecore_cas, dev_h1_full=dev_h1_full, dev_eri_full=dev_eri_full, dev_ecore_full=dev_ecore_full, stable_internal=bool(st_i), stable_external=bool(st_e), full_written=full,
             geometry=[[int(z)] + [float(v) for v in c] for z, c in zip(Z, xyz)])
 for f in list(os.listdir(".")):
