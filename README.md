@@ -5,7 +5,8 @@ mirror on Hugging Face, `molssiai-hub/pubchemqc-b3lyp`) into CAS(8e,8o) FCIDUMP 
 BECOME energy catalog at https://become.belovedecosystem.com/energy/.
 
 - `scripts/pcq_prep.py` streams one source file of a subset (`chon300nosalt` or `chnopsfcl300nosalt`), keeps neutral
-  singlets with at most 150 orbitals, drops CIDs in an optional skip list (molecules an earlier build already
+  singlets with at most `maxorb` orbitals (the published 125,999-molecule catalog uses at most 200; the workflow
+  default is 150), drops CIDs in an optional skip list (molecules an earlier build already
   processed, e.g. `data/done_cids_chon300nosalt_v2.txt.gz`), and with `shards=auto` sizes the shard count to the
   candidate count so dense files finish inside the per-job time budget.
 - `scripts/pcq_convert.py` rebuilds RHF in 6-31G*, checks it against PubChemQC, and writes the FCIDUMP.
@@ -24,3 +25,9 @@ Recipe version 2 adds: the functional named explicitly (`b3lypg`), degenerate or
 generic operator, a phase rule on every orbital, gzip written with mtime 0, integral re-read checks (no correlated energy is computed or stored),
 and a gate rejecting molecules too small for an 8e8o active space. Repeat runs agree within
 about 1e-9 in every integral but are not byte-identical, so compare files by tolerance, not by hash.
+
+## License
+
+The code in this repository is licensed under the Apache License 2.0 (see `LICENSE`). Copyright 2026 Beloved
+Ecosystem, Inc. The PubChemQC input data are not part of this repository; they are licensed separately under CC BY 4.0 by
+their authors.
