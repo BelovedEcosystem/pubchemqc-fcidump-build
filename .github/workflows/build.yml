@@ -1,21 +1,27 @@
 name: Build PubChemQC FCIDUMPs
 
-# Each source file from a PubChemQC B3LYP/6-31G* subset (MolSSI Hugging Face mirror; chon300nosalt or
-# chnopsfcl300nosalt) is streamed once (prep), its small neutral singlets not already processed by an earlier build
-# (skip list) are split into shards, and each shard is converted to CAS(8e,8o) FCIDUMPs on its own runner (build).
+# Each source file from a PubChemQC B3LYP/6-31G* subset (MolSSI Hugging Face mirror, b3lyp_pm6_<subset>) is streamed
+# once (prep), its small neutral singlets that pass the selection settings and are not in the skip list are split into
+# shards, and each shard is converted to CAS(8e,8o) FCIDUMPs on its own runner (build).
 # shards=auto sizes each file's shard count to its candidate count so dense files finish inside the time budget.
+# The README lists the inputs that select each source subset of the published catalog.
 on:
   workflow_dispatch:
     inputs:
-      file_from: { description: 'First source file index (chon300nosalt 0-86, chnopsfcl300nosalt 0-148)', required: true, default: '9' }
+      file_from: { description: 'First source file index (chon300nosalt 0-86, chnopsfcl300nosalt 0-148, chnopsfclnakmgca500 0-346, b3lyp_pm6 0-...)', required: true, default: '9' }
       file_to:   { description: 'Last source file index, inclusive', required: true, default: '9' }
       shards:    { description: 'Runners per source file, or auto (ceil(candidates/per_shard))', required: true, default: '4' }
       maxorb:    { description: 'Max orbitals', required: true, default: '150' }
-      limit:     { description: 'Molecules per shard (0 = all; for tests)', required: true, default: '0' }
+      limit:     { description: 'Molecules per shard (0 = all; a small number for a quick check)', required: true, default: '0' }
       budget_min: { description: 'Stop starting new molecules after this many minutes (job limit 355 min; one molecule may take up to 120 min, so keep this <= 230)', required: true, default: '230' }
-      subset:    { description: 'PubChemQC subset (b3lyp_pm6_<subset>)', required: true, default: 'chon300nosalt' }
+      subset:    { description: 'PubChemQC subset: b3lyp_pm6_<subset>, or b3lyp_pm6 for the full set', required: true, default: 'chon300nosalt' }
       skip:      { description: 'Skip list of CIDs already processed (path in repo, empty = none)', required: false, default: '' }
       per_shard: { description: 'Candidates per shard when shards=auto (max 64 shards per file)', required: true, default: '500' }
+      pool:      { description: 'Pooled mode: 0 = off (one prep job per file); N>0 = scan the files in up to 24 grouped prep jobs, pool all candidates and build them in N shards', required: true, default: '0' }
+      minorb:    { description: 'Keep only molecules with MORE than this many orbitals (0 = no lower limit)', required: true, default: '0' }
+      exclude_z: { description: 'Comma-separated atomic numbers; molecules containing any of them are dropped (empty = none)', required: false, default: '' }
+      allow_z:   { description: 'Comma-separated atomic numbers; molecules with any other element are dropped (empty = no limit)', required: false, default: '' }
+      no_multifrag: { description: '1 = drop molecules whose PubChem SMILES has several fragments in prep (pcq_convert.py rejects them anyway)', required: true, default: '0' }
 
 permissions:
   contents: read
@@ -31,7 +37,9 @@ jobs:
           python3 - <<'P' >> "$GITHUB_OUTPUT"
           import json
           a,b=int("${{ inputs.file_from }}"),int("${{ inputs.file_to }}")
-          print("files="+json.dumps(list(range(a,b+1))))
+          if "${{ inputs.pool }}"=="0": print("files="+json.dumps(list(range(a,b+1))))
+          else:   # pooled mode: contiguous groups of files, at most 24 prep jobs
+              n=b-a+1; g=min(24,n); k=-(-n//g); print("files="+json.dumps([f"{i}-{min(b,i+k-1)}" for i in range(a,b+1,k)]))
           P
 
   prep:
@@ -39,12 +47,20 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
+      max-parallel: 16   # leave runner slots (account limit 20) for other repos' workflows
       matrix: { file: '${{ fromJSON(needs.plan.outputs.files) }}' }
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with: { python-version: '3.13' }
-      - run: python scripts/pcq_prep.py ${{ matrix.file }} ${{ inputs.shards }} ${{ inputs.maxorb }} ${{ inputs.limit }} ${{ inputs.subset }} "${{ inputs.skip }}" ${{ inputs.per_shard }} 64
+      - if: ${{ inputs.pool == '0' }}
+        env: { PCQ_EXCLUDE_Z: '${{ inputs.exclude_z }}', PCQ_ALLOW_Z: '${{ inputs.allow_z }}', PCQ_NO_MULTIFRAG: '${{ inputs.no_multifrag }}', PCQ_MINORB: '${{ inputs.minorb }}' }
+        run: python scripts/pcq_prep.py ${{ matrix.file }} ${{ inputs.shards }} ${{ inputs.maxorb }} ${{ inputs.limit }} ${{ inputs.subset }} "${{ inputs.skip }}" ${{ inputs.per_shard }} 64
+      - if: ${{ inputs.pool != '0' }}
+        env: { PCQ_EXCLUDE_Z: '${{ inputs.exclude_z }}', PCQ_ALLOW_Z: '${{ inputs.allow_z }}', PCQ_NO_MULTIFRAG: '${{ inputs.no_multifrag }}', PCQ_MINORB: '${{ inputs.minorb }}' }
+        run: |
+          r="${{ matrix.file }}"
+          python scripts/pcq_prep_group.py "${r%-*}" "${r#*-}" ${{ inputs.maxorb }} ${{ inputs.subset }} "${{ inputs.skip }}" 4
       - uses: actions/upload-artifact@v4
         with: { name: 'cand-${{ matrix.file }}', path: cand, retention-days: 7 }
 
@@ -55,8 +71,14 @@ jobs:
     outputs:
       cells: ${{ steps.c.outputs.cells }}
     steps:
+      - uses: actions/checkout@v4
       - uses: actions/download-artifact@v4
         with: { pattern: 'cand-*', path: cand }
+      - if: ${{ inputs.pool != '0' }}
+        run: python3 scripts/pcq_pool.py cand ${{ inputs.pool }} pool && rm -rf cand && mkdir -p cand/cand-pool && mv pool/* cand/cand-pool/
+      - if: ${{ inputs.pool != '0' }}
+        uses: actions/upload-artifact@v4
+        with: { name: 'cand-pool', path: cand/cand-pool, retention-days: 30 }
       - id: c
         run: |
           python3 - <<'P' >> "$GITHUB_OUTPUT"
