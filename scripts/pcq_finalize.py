@@ -1,13 +1,13 @@
 """Build the strict-tier published library from catalog.jsonl. Idempotent; rerun any time.
 Strict tier = status ok AND RHF stable toward UHF (stable_external True).
 Every published FCIDUMP is re-read from disk and must reproduce e_rhf to 1e-8 Eh and match both recorded hashes
-(sha256 of the uncompressed text, sha256_gz of the .gz archive). Recipe version 2.
+(sha256 of the uncompressed text, sha256_gz of the .gz archive).
 usage: PCQ_DIR=<dir with catalog.jsonl and fcidump/> [PCQ_SUBSET=chon300nosalt] pcq_finalize.py"""
 import json, os, sys, gzip, shutil, hashlib, csv, platform, tempfile
 import numpy as np, scipy, pyscf
 from pyscf import ao2mo
 from pyscf.tools import fcidump
-D = os.environ.get('PCQ_DIR', '/workspace/pubchemqc_v2'); SUBSET = os.environ.get('PCQ_SUBSET', 'chon300nosalt'); L = f'{D}/library'; PUB = f'{L}/published'
+D = os.environ.get('PCQ_DIR', '.'); SUBSET = os.environ.get('PCQ_SUBSET', 'chon300nosalt'); L = f'{D}/library'; PUB = f'{L}/published'
 SYM = {1:'H',5:'B',6:'C',7:'N',8:'O',9:'F',14:'Si',15:'P',16:'S',17:'Cl',35:'Br'}
 TOL = 1e-8
 sha = lambda p: hashlib.sha256(open(p, 'rb').read()).hexdigest()

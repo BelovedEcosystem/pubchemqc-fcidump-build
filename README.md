@@ -1,6 +1,6 @@
 # PubChemQC FCIDUMP build
 
-Scripts that turn PubChemQC B3LYP/6-31G* records (Nakata and colleagues, CC-BY-4.0, from MolSSI's public
+Scripts that turn PubChemQC B3LYP/6-31G* records (Nakata and colleagues, CC BY 4.0, from MolSSI's public
 mirror on Hugging Face, `molssiai-hub/pubchemqc-b3lyp`) into CAS(8e,8o) FCIDUMP files with PySCF, for the
 BECOME energy catalog at https://become.belovedecosystem.com/energy/.
 
@@ -15,11 +15,24 @@ BECOME energy catalog at https://become.belovedecosystem.com/energy/.
 - `scripts/pcq_run.py` runs a batch in parallel and writes `catalog.jsonl`.
 - `scripts/pcq_merge.py` merges the `out/` directories of several shards into one tree (first shard wins on
   a duplicate CID; duplicates are listed in `merge_duplicates.jsonl`).
-- `scripts/pcq_finalize.py` re-checks every file and writes the published library (`SHA256SUMS` for the
-  uncompressed text, `SHA256SUMS-gz` for the `.gz` archives).
+- `scripts/pcq_finalize.py` re-checks every file and writes the build library: `library/catalog.jsonl` and, for
+  each molecule, `library/published/<CID>/` with `FCIDUMP_pcq<CID>_cas8e8o.gz` (plus a full-space file for molecules
+  with at most 60 orbitals), `pcq<CID>.xyz`, `entry.json`, `SHA256SUMS` for the uncompressed text and
+  `SHA256SUMS-gz` for the `.gz` archives.
+- `scripts/pcq_package.py` packages one or more build libraries into the deposited layout: the active-space files
+  uncompressed as `become-fcidump-pcq/fcidump/pcq<CID>_6-31g_cas8e8o.fcidump`, the geometries as
+  `become-fcidump-pcq/xyz/pcq<CID>.xyz`, the index `catalog_index.csv` (one row per entry), `SHA256SUMS.txt` and,
+  with `--tar`, a reproducible `become-fcidump-pcq.tar.gz`.
 
 The `Build PubChemQC FCIDUMPs` workflow runs prep and build across many GitHub runners at once, then a
-`finalize` job merges every shard and uploads the published library as the `library` artifact.
+`finalize` job merges every shard and uploads the build library as the `library` artifact. The deposited catalog is
+made from the four sources' libraries with
+
+    python scripts/pcq_package.py <out> <chon300nosalt library> <chnopsfcl300nosalt library> \
+        <chnopsfclnakmgca500 library> <b3lyp_pm6 library> --tar [--entry-numbers <CSV of cid,i>]
+
+Column `i` of `catalog_index.csv` is the catalog entry number; without `--entry-numbers` the entries are numbered
+in packaging order.
 
 ## Selection settings for the published catalog
 
@@ -28,7 +41,7 @@ inputs below; inputs not listed keep their defaults (`limit=0`, `pool=0`, `minor
 `exclude_z`, `allow_z` and `skip`). `shards`, `per_shard`, the pooled shard count and `budget_min` only spread the
 work over runners and do not change which molecules are selected.
 
-| Source | `subset` | Files | `maxorb` | Other selection inputs |
+| Source | `subset` | `file_from`-`file_to` | `maxorb` | Other selection inputs |
 |---|---|---|---|---|
 | `b3lyp_pm6_chon300nosalt` | `chon300nosalt` | 0-86 | 150 | none |
 | `b3lyp_pm6_chnopsfcl300nosalt` | `chnopsfcl300nosalt` | 0-148 | 150 | `skip=data/skip_chnopsfcl300nosalt.txt.gz` |
