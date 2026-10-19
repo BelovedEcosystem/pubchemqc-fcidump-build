@@ -10,8 +10,7 @@ We take only the structure from PubChemQC and redo everything ourselves in PySCF
              each file is re-read and must reproduce its integrals to 1e-10 and the RHF energy to 1e-8 Eh;
              gzip written with mtime 0; no correlated (CASCI/FCI) energy is computed or stored
   degenerate orbitals (same occupation, energies within 1e-5 Eh) are fixed by diagonalizing a fixed
-             generic point-charge Coulomb operator inside each block, before the phase rule
-Recipe version 2."""
+             generic point-charge Coulomb operator inside each block, before the phase rule"""
 import sys, os, re, json, gzip, shutil, numpy as np
 from pyscf import gto, dft, scf, mcscf, fci, ao2mo, lib
 from pyscf.tools import fcidump
