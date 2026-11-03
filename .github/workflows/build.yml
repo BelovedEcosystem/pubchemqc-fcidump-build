@@ -62,7 +62,7 @@ jobs:
           r="${{ matrix.file }}"
           python scripts/pcq_prep_group.py "${r%-*}" "${r#*-}" ${{ inputs.maxorb }} ${{ inputs.subset }} "${{ inputs.skip }}" 4
       - uses: actions/upload-artifact@v4
-        with: { name: 'cand-${{ matrix.file }}', path: cand, retention-days: 7 }
+        with: { name: 'cand-${{ matrix.file }}', path: cand, retention-days: 1 }
 
   # one build cell per (file, shard), using the shard count each prep job chose
   cells:
@@ -78,7 +78,7 @@ jobs:
         run: python3 scripts/pcq_pool.py cand ${{ inputs.pool }} pool && rm -rf cand && mkdir -p cand/cand-pool && mv pool/* cand/cand-pool/
       - if: ${{ inputs.pool != '0' }}
         uses: actions/upload-artifact@v4
-        with: { name: 'cand-pool', path: cand/cand-pool, retention-days: 30 }
+        with: { name: 'cand-pool', path: cand/cand-pool, retention-days: 1 }
       - id: c
         run: |
           python3 - <<'P' >> "$GITHUB_OUTPUT"
@@ -116,7 +116,7 @@ jobs:
           echo "rows=$(wc -l < out/catalog.jsonl) ok=$(grep -c '"status": "ok"' out/catalog.jsonl || true)"
       - uses: actions/upload-artifact@v4
         if: always()
-        with: { name: 'out-${{ matrix.cell.file }}-${{ matrix.cell.shard }}', path: out, retention-days: 30 }
+        with: { name: 'out-${{ matrix.cell.file }}-${{ matrix.cell.shard }}', path: out, retention-days: 1 }
 
   # Merge every shard's out/ into one tree and run the final re-check; the published library is uploaded
   # as one artifact ('library'), so nothing has to be assembled by hand before the shard artifacts expire.
@@ -137,6 +137,6 @@ jobs:
           python scripts/pcq_merge.py merged shards/out-*
           PCQ_DIR=merged PCQ_SUBSET=${{ inputs.subset }} python scripts/pcq_finalize.py
       - uses: actions/upload-artifact@v4
-        with: { name: 'library', path: merged/library, retention-days: 90 }
+        with: { name: 'library', path: merged/library, retention-days: 1 }
       - uses: actions/upload-artifact@v4
-        with: { name: 'merged-catalog', path: merged/catalog.jsonl, retention-days: 90 }
+        with: { name: 'merged-catalog', path: merged/catalog.jsonl, retention-days: 1 }
